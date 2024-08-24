@@ -1,13 +1,20 @@
 use std::{
-    io::{BufRead, BufReader},
+    fs,
+    io::{BufRead, BufReader, Write},
     net::{TcpListener, TcpStream},
 };
 
 use anyhow::Result;
 use clap::Parser;
 use itertools::Itertools;
-use tracing::info;
+use tracing::{debug, info};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
+
+mod codes;
+mod request;
+mod response;
+
+pub static SUPPORTED_HTTP_VERSION: &str = "HTTP/1.1";
 
 #[derive(Parser, Debug)]
 #[command(version, author, about, long_about = None)]
@@ -31,13 +38,13 @@ fn main() -> Result<()> {
     info!("Socket bound to address: {}", &address);
 
     for stream in socket.incoming() {
-        handle_connection(stream?);
+        handle_connection(stream?)?;
     }
 
     Ok(())
 }
 
-fn handle_connection(mut stream: TcpStream) {
+fn handle_connection(mut stream: TcpStream) -> Result<()> {
     let buf_reader = BufReader::new(&mut stream);
     let request = buf_reader
         .lines()
@@ -45,7 +52,18 @@ fn handle_connection(mut stream: TcpStream) {
         .take_while(|line| !line.is_empty())
         .collect_vec();
 
-    info!("Received Request:\n{}", format_request(&request));
+    debug!("Received Request:\n{}", format_request(&request));
+
+    let content = fs::read_to_string("static/hello.html")?;
+    let response = format!(
+        "{}\r\nContent-Length: {}\r\n\r\n{content}",
+        response::StatusLine::new(codes::ResponseCode::Ok),
+        content.len(),
+    );
+
+    stream.write_all(response.as_bytes())?;
+
+    Ok(())
 }
 
 fn format_request(request: &[String]) -> String {
