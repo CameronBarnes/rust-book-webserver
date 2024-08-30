@@ -53,12 +53,16 @@ impl Request {
         } else {
             return Err(anyhow!("Invalid HTTP version"));
         };
-        line.clear();
 
         let mut in_headers = true;
         let mut body: Option<String> = None;
         let mut headers = HashMap::new();
-        while reader.read_line(&mut line)? > 0 {
+        for line in reader
+            .lines()
+            .take_while(|line| line.as_ref().is_ok_and(|line| !line.is_empty()))
+        {
+            let line = line?;
+            //dbg!(&line);
             if line.trim().is_empty() {
                 in_headers = false;
                 continue;
@@ -77,8 +81,8 @@ impl Request {
             } else if !line.trim().is_empty() {
                 body = Some(line.to_string());
             }
-            line.clear();
         }
+        //debug!("Finished reading request body");
 
         Ok(Self {
             method,
@@ -87,5 +91,25 @@ impl Request {
             headers,
             body,
         })
+    }
+
+    pub const fn method(&self) -> Method {
+        self.method
+    }
+
+    pub const fn target(&self) -> &String {
+        &self.target
+    }
+
+    pub const fn version(&self) -> &String {
+        &self.version
+    }
+
+    pub const fn headers(&self) -> &HashMap<String, String> {
+        &self.headers
+    }
+
+    pub const fn body(&self) -> Option<&String> {
+        self.body.as_ref()
     }
 }

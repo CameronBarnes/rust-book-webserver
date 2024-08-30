@@ -1,19 +1,19 @@
 use std::{
-    fs,
-    io::{BufRead, BufReader, Write},
+    io::{BufReader, Write},
     net::{TcpListener, TcpStream},
 };
 
 use anyhow::Result;
 use clap::Parser;
-use itertools::Itertools;
 use request::Request;
+use route::Routes;
 use tracing::{debug, info};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod codes;
 mod request;
 mod response;
+mod route;
 
 pub static SUPPORTED_HTTP_VERSION: &str = "HTTP/1.1";
 
@@ -38,24 +38,28 @@ fn main() -> Result<()> {
     let address = socket.local_addr()?;
     info!("Socket bound to address: {}", &address);
 
+    let mut routes = Routes::default();
+    routes.add_static("/", "static/hello.html")?;
+
     for stream in socket.incoming() {
-        handle_connection(stream?)?;
+        debug!("Incomming connection!");
+        handle_connection(stream?, &routes)?;
     }
 
     Ok(())
 }
 
-fn handle_connection(mut stream: TcpStream) -> Result<()> {
+fn handle_connection(mut stream: TcpStream, routes: &Routes) -> Result<()> {
     let buf_reader = BufReader::new(&mut stream);
     let request = Request::parse(buf_reader)?; // FIXME: We should handle this error here
 
     //debug!("Received Request:\n{}", format_request(&request));
 
-    // TODO: Chose content based on request
-    let content = fs::read_to_string("static/hello.html")?;
+    let (content, code) = routes.apply(&request)?;
+
     let response = format!(
         "{}\r\nContent-Length: {}\r\n\r\n{content}",
-        response::StatusLine::new(codes::ResponseCode::Ok),
+        response::StatusLine::new(code),
         content.len(),
     );
 
