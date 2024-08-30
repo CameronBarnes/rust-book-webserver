@@ -7,6 +7,7 @@ use std::{
 use anyhow::Result;
 use clap::Parser;
 use itertools::Itertools;
+use request::Request;
 use tracing::{debug, info};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -46,14 +47,11 @@ fn main() -> Result<()> {
 
 fn handle_connection(mut stream: TcpStream) -> Result<()> {
     let buf_reader = BufReader::new(&mut stream);
-    let request = buf_reader
-        .lines()
-        .map_while(Result::ok)
-        .take_while(|line| !line.is_empty())
-        .collect_vec();
+    let request = Request::parse(buf_reader)?; // FIXME: We should handle this error here
 
-    debug!("Received Request:\n{}", format_request(&request));
+    //debug!("Received Request:\n{}", format_request(&request));
 
+    // TODO: Chose content based on request
     let content = fs::read_to_string("static/hello.html")?;
     let response = format!(
         "{}\r\nContent-Length: {}\r\n\r\n{content}",

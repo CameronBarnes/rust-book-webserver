@@ -1,5 +1,6 @@
 use derive_more::derive::Display;
 
+#[allow(non_camel_case_types)]
 #[derive(Display, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResponseCode {
     //100,
@@ -31,7 +32,7 @@ pub enum ResponseCode {
     //401,
     //402,
     //403,
-    NotFound = 404,
+    Not_Found = 404,
     //405,
     //406,
     //407,
@@ -68,4 +69,10 @@ pub enum ResponseCode {
     //508,
     //510,
     //511,
+}
+
+impl ResponseCode {
+    pub fn pretty_string(self) -> String {
+        format!("{} {}", self as i32, self.to_string().replace('_', " "))
+    }
 }

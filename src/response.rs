@@ -18,6 +18,6 @@ impl StatusLine {
 
 impl Display for StatusLine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {} {}", self.version, self.code as i32, self.code)
+        write!(f, "{} {}", self.version, self.code.pretty_string())
     }
 }

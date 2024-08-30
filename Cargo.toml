@@ -36,8 +36,8 @@ clap = { version = "4.5", features = ["derive"] }
 #enum-iterator = "2.1"
 # I find this covers a lot of enum boilerplate
 # Recommended features include display, from, is_variant, into, deref, and dref_mut
-derive_more = { version = "1.0", features = ["display"] }
+derive_more = { version = "1.0", features = ["display", "from_str"] }
 
 # Enable one of the following if this program uses hashmaps
 #rustc-hash = "2.0" # Poor quality but very high integer performance
-#ahash = "0.8" # Should be used most of the time instead of the default HashMap implementation
+ahash = "0.8" # Should be used most of the time instead of the default HashMap implementation
