@@ -5,11 +5,11 @@ use std::{
 
 use ahash::{HashMap, HashMapExt};
 use anyhow::{anyhow, Context, Result};
-use derive_more::derive::{Display, FromStr};
+use derive_more::derive::{Display, FromStr, IsVariant};
 use itertools::Itertools;
 
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Display, FromStr)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display, FromStr, Hash, IsVariant)]
 pub enum Method {
     GET,
     HEAD,
@@ -20,6 +20,12 @@ pub enum Method {
     OPTIONS,
     TRACE,
     PATCH,
+}
+
+impl From<Method> for Vec<Method> {
+    fn from(val: Method) -> Self {
+        vec![val]
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -58,11 +64,11 @@ impl Request {
         let mut body: Option<String> = None;
         let mut headers = HashMap::new();
         for line in reader
-            .lines()
+            .lines() // FIXME: Because of the code bellow the body is never captured
             .take_while(|line| line.as_ref().is_ok_and(|line| !line.is_empty()))
         {
             let line = line?;
-            //dbg!(&line);
+            dbg!(&line);
             if line.trim().is_empty() {
                 in_headers = false;
                 continue;
@@ -101,6 +107,10 @@ impl Request {
         &self.target
     }
 
+    pub fn target_as_path(&self) -> &str {
+        self.target.trim_start_matches('/')
+    }
+
     pub const fn version(&self) -> &String {
         &self.version
     }
@@ -111,5 +121,17 @@ impl Request {
 
     pub const fn body(&self) -> Option<&String> {
         self.body.as_ref()
+    }
+
+    pub fn as_string(&self) -> String {
+        let mut out = format!("{} {} {}\n", self.method(), self.target(), self.version());
+        for (key, val) in self.headers() {
+            out.push_str(&format!("{key}: {val}\n"));
+        }
+        if let Some(body) = self.body() {
+            out.push_str(body);
+        }
+
+        out
     }
 }

@@ -26,6 +26,8 @@ itertools = "0.13"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 
+threadpool = "1.8"
+
 # Error handling
 anyhow = "1.0"
 thiserror = "1.0" # This should be used with custom error types any time the error needs to contain data that we want to use
@@ -36,7 +38,7 @@ clap = { version = "4.5", features = ["derive"] }
 #enum-iterator = "2.1"
 # I find this covers a lot of enum boilerplate
 # Recommended features include display, from, is_variant, into, deref, and dref_mut
-derive_more = { version = "1.0", features = ["display", "from_str", "unwrap"] }
+derive_more = { version = "1.0", features = ["display", "from_str", "is_variant"] }
 
 # Enable one of the following if this program uses hashmaps
 #rustc-hash = "2.0" # Poor quality but very high integer performance

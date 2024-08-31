@@ -2,24 +2,30 @@ use std::{ffi::OsString, fs, path::PathBuf, sync::LazyLock};
 
 use ahash::HashMap;
 use anyhow::{anyhow, Result};
+use tracing::error;
 
-use crate::{codes::ResponseCode, request::Request};
+use crate::{
+    codes::ResponseCode,
+    request::{Method, Request},
+};
 
 #[allow(clippy::module_name_repetitions)]
 pub type FnRoute = fn(&Request) -> Result<(String, ResponseCode)>;
 
 #[derive(Debug, Clone)]
 pub enum Route {
-    Static(String),
-    Plain(String),
+    Static(String, Option<ResponseCode>),
+    Plain(String, Option<ResponseCode>),
     Dynamic(FnRoute),
 }
 
 impl Route {
     fn apply(&self, request: &Request) -> Result<(String, ResponseCode)> {
         match self {
-            Self::Static(path) => Ok((fs::read_to_string(path)?, ResponseCode::Ok)),
-            Self::Plain(content) => Ok((content.clone(), ResponseCode::Ok)),
+            Self::Static(path, code) => {
+                Ok((fs::read_to_string(path)?, code.unwrap_or(ResponseCode::Ok)))
+            }
+            Self::Plain(content, code) => Ok((content.clone(), code.unwrap_or(ResponseCode::Ok))),
             Self::Dynamic(f) => f(request),
         }
     }
@@ -27,7 +33,7 @@ impl Route {
 
 #[derive(Default, Debug, Clone)]
 pub struct Routes {
-    map: HashMap<String, Route>,
+    map: HashMap<(Method, String), Route>,
     four_oh_four: Option<Route>,
     static_dir: Option<PathBuf>,
 }
@@ -37,12 +43,14 @@ impl Routes {
         &mut self,
         target: A,
         path: B,
+        code: Option<ResponseCode>,
     ) -> Result<()> {
         let target: String = target.into();
-        if let std::collections::hash_map::Entry::Vacant(e) = self.map.entry(target) {
+        if let std::collections::hash_map::Entry::Vacant(e) = self.map.entry((Method::GET, target))
+        {
             // TODO: Verify that the provided target is valid
             // TODO: Verify that the provided path is valid
-            e.insert(Route::Static(path.into()));
+            e.insert(Route::Static(path.into(), code));
             Ok(())
         } else {
             // TODO: Implement custom error type to handle this
@@ -54,11 +62,13 @@ impl Routes {
         &mut self,
         target: A,
         content: B,
+        code: Option<ResponseCode>,
     ) -> Result<()> {
         let target: String = target.into();
-        if let std::collections::hash_map::Entry::Vacant(e) = self.map.entry(target) {
+        if let std::collections::hash_map::Entry::Vacant(e) = self.map.entry((Method::GET, target))
+        {
             // TODO: Verify that the provided target is valid
-            e.insert(Route::Plain(content.into()));
+            e.insert(Route::Plain(content.into(), code));
             Ok(())
         } else {
             // TODO: Implement custom error type to handle this
@@ -66,20 +76,26 @@ impl Routes {
         }
     }
 
-    pub fn add_dynamic<A: Into<String>>(
+    pub fn add_dynamic<A: Into<String>, M: Into<Vec<Method>>>(
         &mut self,
         target: A,
+        method: M,
         f: FnRoute,
     ) -> Result<()> {
         let target: String = target.into();
-        if let std::collections::hash_map::Entry::Vacant(e) = self.map.entry(target) {
-            // TODO: Verify that the provided target is valid
-            e.insert(Route::Dynamic(f));
-            Ok(())
-        } else {
-            // TODO: Implement custom error type to handle this
-            Err(anyhow!("Target already exists"))
+        // TODO: Verify that the provided target is valid
+
+        for method in method.into() {
+            if let std::collections::hash_map::Entry::Vacant(e) =
+                self.map.entry((method, target.clone()))
+            {
+                e.insert(Route::Dynamic(f));
+            } else {
+                // TODO: Implement custom error type to handle this
+                return Err(anyhow!("Target already exists"));
+            }
         }
+        Ok(())
     }
 
     pub fn set_404(&mut self, route: Route) {
@@ -94,12 +110,21 @@ impl Routes {
         // TODO: Handle wildcard targets
         static PATH_BOUNDS: LazyLock<OsString> =
             LazyLock::new(|| PathBuf::from("./").canonicalize().unwrap().into_os_string());
-        if let Some(route) = self.map.get(request.target()) {
+        // TODO: This clone is not ideal
+        if let Some(route) = self.map.get(&(request.method(), request.target().clone())) {
             route.apply(request)
         } else if let Some(dir) = self.static_dir.as_ref() {
-            let target = PathBuf::from(request.target()).canonicalize()?;
+            if !request.method().is_get() {
+                return self.four_oh_four(request);
+            }
             let mut path = dir.clone();
-            path.push(target);
+            path.push(request.target_as_path());
+            let Ok(path) = path.canonicalize() else {
+                if path.exists() {
+                    error!("Failed to canonicalize path: {:#?}", path.into_os_string());
+                }
+                return self.four_oh_four(request);
+            };
             if !path.starts_with(&*PATH_BOUNDS) {
                 Err(anyhow!("Invalid path traversal")) // TODO: Create custom error
             } else if path.exists() {
@@ -113,10 +138,9 @@ impl Routes {
     }
 
     pub fn four_oh_four(&self, request: &Request) -> Result<(String, ResponseCode)> {
-        self.four_oh_four
-            .as_ref()
-            .map_or(Ok(("404 Not Found".to_string(), ResponseCode::Not_Found)), |route| {
-                route.apply(request)
-            })
+        self.four_oh_four.as_ref().map_or(
+            Ok(("404 Not Found".to_string(), ResponseCode::Not_Found)),
+            |route| route.apply(request),
+        )
     }
 }
