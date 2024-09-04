@@ -73,7 +73,6 @@ fn main() -> Result<()> {
             ThreadPool::new(args.threads as usize)
         };
         for stream in socket.incoming() {
-            // FIXME: Handle errors properly
             let routes = routes.clone();
             pool.execute(move || handle_connection(stream.unwrap(), routes));
         }
@@ -84,11 +83,13 @@ fn main() -> Result<()> {
 
 fn handle_connection<R: Deref<Target = Routes>>(mut stream: TcpStream, routes: R) {
     let buf_reader = BufReader::new(&mut stream);
-    let request = Request::parse(buf_reader).unwrap(); // FIXME: We should handle this error here
-
-    debug!("Received Request:\n{}", &request.as_string());
-
-    let (content, code) = routes.apply(&request).unwrap();
+    let (content, code) = Request::parse(buf_reader).map_or_else(
+        |_| ("Failed to parse".into(), ResponseCode::Bad_Request),
+        |request| {
+            debug!("Received Request:\n{}", &request.as_string());
+            routes.apply(&request).unwrap()
+        },
+    );
 
     let response = format!(
         "{}\r\nContent-Length: {}\r\n\r\n{content}",

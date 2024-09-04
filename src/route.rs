@@ -35,6 +35,7 @@ impl Route {
 pub struct Routes {
     map: HashMap<(Method, String), Route>,
     four_oh_four: Option<Route>,
+    four_oh_five: Option<Route>,
     static_dir: Option<PathBuf>,
 }
 
@@ -114,18 +115,27 @@ impl Routes {
         if let Some(route) = self.map.get(&(request.method(), request.target().clone())) {
             route.apply(request)
         } else if let Some(dir) = self.static_dir.as_ref() {
+            // We only accept GET requests to this route, so we'll return a 405 otherwise
             if !request.method().is_get() {
-                return self.four_oh_four(request);
+                return self.four_oh_five(request, Method::GET);
             }
+            // Build a new path with the presumably relative path provided by the user and the
+            // PATH_BOUNDS of this application. // TODO: Consider if we want to allow this outside
+            // TODO: of the static_dir, probably not
             let mut path = dir.clone();
             path.push(request.target_as_path());
             let Ok(path) = path.canonicalize() else {
+                // If we fail to canonicalize the path it's either not valid for this server to
+                // return, not sure if this will ever actually happen, or we dont have it
+                // We'll return a 404 either way
                 if path.exists() {
                     error!("Failed to canonicalize path: {:#?}", path.into_os_string());
                 }
                 return self.four_oh_four(request);
             };
             if !path.starts_with(&*PATH_BOUNDS) {
+                //TODO: Return a 401 Unauthorized here. We still want to make sure this gets logged
+                //for security purposes, likely more effectively than we've done here.
                 Err(anyhow!("Invalid path traversal")) // TODO: Create custom error
             } else if path.exists() {
                 Ok((fs::read_to_string(path)?, ResponseCode::Ok))
@@ -140,6 +150,25 @@ impl Routes {
     pub fn four_oh_four(&self, request: &Request) -> Result<(String, ResponseCode)> {
         self.four_oh_four.as_ref().map_or(
             Ok(("404 Not Found".to_string(), ResponseCode::Not_Found)),
+            |route| route.apply(request),
+        )
+    }
+
+    pub fn four_oh_five(
+        &self,
+        request: &Request,
+        expecting: Method,
+    ) -> Result<(String, ResponseCode)> {
+        self.four_oh_five.as_ref().map_or_else(
+            || {
+                Ok((
+                    format!(
+                        "Method: {}, not allowed. Expecting: {expecting}, instead.",
+                        request.method()
+                    ),
+                    ResponseCode::Method_Not_Allowed,
+                ))
+            },
             |route| route.apply(request),
         )
     }
