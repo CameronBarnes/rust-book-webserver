@@ -29,7 +29,7 @@ pub enum ResponseCode {
     //308,
 
     Bad_Request = 400,
-    //401,
+    Unauthorized = 401,
     //402,
     //403,
     Not_Found = 404,

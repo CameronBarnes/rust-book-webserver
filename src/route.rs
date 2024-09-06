@@ -10,7 +10,83 @@ use crate::{
 };
 
 #[allow(clippy::module_name_repetitions)]
-pub type FnRoute = fn(&Request) -> Result<(String, ResponseCode)>;
+pub struct RouteResponse {
+    content: String,
+    response_code: ResponseCode,
+    require_logging: bool,
+    logging_context: Option<String>,
+}
+
+impl RouteResponse {
+    pub const fn new_ok(content: String, response_code: ResponseCode) -> Self {
+        Self {
+            content,
+            response_code,
+            require_logging: false,
+            logging_context: None,
+        }
+    }
+
+    pub const fn new_logging(
+        content: String,
+        response_code: ResponseCode,
+        logging_context: Option<String>,
+    ) -> Self {
+        Self {
+            content,
+            response_code,
+            require_logging: true,
+            logging_context,
+        }
+    }
+
+    pub const fn code(&self) -> ResponseCode {
+        self.response_code
+    }
+
+    pub fn content(&self) -> &str {
+        &self.content
+    }
+
+    // TODO: Fill out the rest of the functions for logging
+}
+
+impl From<(String, ResponseCode)> for RouteResponse {
+    fn from(val: (String, ResponseCode)) -> Self {
+        Self::new_ok(val.0, val.1)
+    }
+}
+
+impl From<(String, ResponseCode, bool)> for RouteResponse {
+    fn from(val: (String, ResponseCode, bool)) -> Self {
+        if val.2 {
+            Self::new_logging(val.0, val.1, None)
+        } else {
+            (val.0, val.1).into()
+        }
+    }
+}
+
+impl From<(String, ResponseCode, Option<String>)> for RouteResponse {
+    fn from(val: (String, ResponseCode, Option<String>)) -> Self {
+        Self::new_logging(val.0, val.1, val.2)
+    }
+}
+
+impl From<(String, ResponseCode, String)> for RouteResponse {
+    fn from(val: (String, ResponseCode, String)) -> Self {
+        (val.0, val.1, Some(val.2)).into()
+    }
+}
+
+impl From<(String, ResponseCode, &str)> for RouteResponse {
+    fn from(val: (String, ResponseCode, &str)) -> Self {
+        (val.0, val.1, Some(val.2.into())).into()
+    }
+}
+
+#[allow(clippy::module_name_repetitions)]
+pub type FnRoute = fn(&Request) -> Result<RouteResponse>;
 
 #[derive(Debug, Clone)]
 pub enum Route {
@@ -20,12 +96,14 @@ pub enum Route {
 }
 
 impl Route {
-    fn apply(&self, request: &Request) -> Result<(String, ResponseCode)> {
+    fn apply(&self, request: &Request) -> Result<RouteResponse> {
         match self {
             Self::Static(path, code) => {
-                Ok((fs::read_to_string(path)?, code.unwrap_or(ResponseCode::Ok)))
+                Ok((fs::read_to_string(path)?, code.unwrap_or(ResponseCode::Ok)).into())
             }
-            Self::Plain(content, code) => Ok((content.clone(), code.unwrap_or(ResponseCode::Ok))),
+            Self::Plain(content, code) => {
+                Ok((content.clone(), code.unwrap_or(ResponseCode::Ok)).into())
+            }
             Self::Dynamic(f) => f(request),
         }
     }
@@ -107,7 +185,7 @@ impl Routes {
         self.static_dir = Some(path.into());
     }
 
-    pub fn apply(&self, request: &Request) -> Result<(String, ResponseCode)> {
+    pub fn apply(&self, request: &Request) -> Result<RouteResponse> {
         // TODO: Handle wildcard targets
         static PATH_BOUNDS: LazyLock<OsString> =
             LazyLock::new(|| PathBuf::from("./").canonicalize().unwrap().into_os_string());
@@ -136,9 +214,9 @@ impl Routes {
             if !path.starts_with(&*PATH_BOUNDS) {
                 //TODO: Return a 401 Unauthorized here. We still want to make sure this gets logged
                 //for security purposes, likely more effectively than we've done here.
-                Err(anyhow!("Invalid path traversal")) // TODO: Create custom error
+                Ok(("Unauthorized".into(), ResponseCode::Unauthorized, "Invalid path traversal").into())
             } else if path.exists() {
-                Ok((fs::read_to_string(path)?, ResponseCode::Ok))
+                Ok((fs::read_to_string(path)?, ResponseCode::Ok).into())
             } else {
                 self.four_oh_four(request)
             }
@@ -147,27 +225,26 @@ impl Routes {
         }
     }
 
-    pub fn four_oh_four(&self, request: &Request) -> Result<(String, ResponseCode)> {
+    pub fn four_oh_four(&self, request: &Request) -> Result<RouteResponse> {
         self.four_oh_four.as_ref().map_or(
-            Ok(("404 Not Found".to_string(), ResponseCode::Not_Found)),
+            Ok(("404 Not Found".to_string(), ResponseCode::Not_Found).into()),
             |route| route.apply(request),
         )
     }
 
-    pub fn four_oh_five(
-        &self,
-        request: &Request,
-        expecting: Method,
-    ) -> Result<(String, ResponseCode)> {
+    pub fn four_oh_five(&self, request: &Request, expecting: Method) -> Result<RouteResponse> {
         self.four_oh_five.as_ref().map_or_else(
             || {
+                let error = format!(
+                    "Method: {}, not allowed. Expecting: {expecting}, instead.",
+                    request.method()
+                );
                 Ok((
-                    format!(
-                        "Method: {}, not allowed. Expecting: {expecting}, instead.",
-                        request.method()
-                    ),
+                    error.clone(),
                     ResponseCode::Method_Not_Allowed,
-                ))
+                    error, // We want to provide context here that requires this be logged
+                )
+                    .into())
             },
             |route| route.apply(request),
         )

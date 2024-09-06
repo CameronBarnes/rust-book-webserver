@@ -56,7 +56,7 @@ fn main() -> Result<()> {
         let duration = request.body().map_or("5", |v| v).parse().unwrap_or(5);
         info!("Sleeping for {duration} seconds");
         thread::sleep(Duration::from_secs(duration));
-        Ok(("Sleeping".into(), ResponseCode::Ok))
+        Ok(("Sleeping".into(), ResponseCode::Ok).into())
     })?;
     routes.set_static_dir("static/");
     routes.add_plain("/plain", "Test Plain", None)?;
@@ -83,18 +83,21 @@ fn main() -> Result<()> {
 
 fn handle_connection<R: Deref<Target = Routes>>(mut stream: TcpStream, routes: R) {
     let buf_reader = BufReader::new(&mut stream);
-    let (content, code) = Request::parse(buf_reader).map_or_else(
-        |_| ("Failed to parse".into(), ResponseCode::Bad_Request),
+    let route_response = Request::parse(buf_reader).map_or_else(
+        |_| ("Failed to parse".into(), ResponseCode::Bad_Request).into(),
         |request| {
             debug!("Received Request:\n{}", &request.as_string());
             routes.apply(&request).unwrap()
         },
     );
 
+    // TODO: Handle requests for logging from the ```RouteResponse```
+
     let response = format!(
-        "{}\r\nContent-Length: {}\r\n\r\n{content}",
-        response::StatusLine::new(code),
-        content.len(),
+        "{}\r\nContent-Length: {}\r\n\r\n{}",
+        response::StatusLine::new(route_response.code()),
+        route_response.content().len(),
+        route_response.content()
     );
 
     stream.write_all(response.as_bytes()).unwrap();
