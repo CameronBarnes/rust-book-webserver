@@ -13,7 +13,7 @@ use codes::ResponseCode;
 use request::{Method, Request};
 use route::Routes;
 use threadpool::ThreadPool;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod codes;
@@ -89,7 +89,7 @@ fn handle_connection<R: Deref<Target = Routes>>(mut stream: TcpStream, routes: R
             (None, ("Failed to parse", ResponseCode::Bad_Request).into())
         },
         |request| {
-            debug!("Received Request:\n{}", &request.as_string());
+            //tracing::debug!("Received Request:\n{}", &request.as_string());
             (Some(request.clone()), routes.apply(&request).unwrap())
         },
     );

@@ -7,6 +7,8 @@ use ahash::{HashMap, HashMapExt};
 use anyhow::{anyhow, Context, Result};
 use derive_more::derive::{Display, FromStr, IsVariant};
 use itertools::Itertools;
+use tracing::debug;
+use urlencoding::decode;
 
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display, FromStr, Hash, IsVariant)]
@@ -50,10 +52,15 @@ impl Request {
         let target = if target.is_empty() {
             String::from("/")
         } else if target.starts_with('/') {
-            target.to_string()
+            // NOTE: Looks like the decode function here resolves path travesal at this point by
+            // resolving the path now
+            // I'll leave the code for preventing path traversal in place in the routes apply
+            // function just in case. I'd rather not rely on this being here
+            decode(target)?.into_owned()
         } else {
             return Err(anyhow!("Target value must start with '/'"));
         };
+        debug!("Target: {target}");
         let version = if version.starts_with("HTTP/") {
             version.to_string()
         } else {

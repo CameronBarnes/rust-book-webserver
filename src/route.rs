@@ -210,6 +210,9 @@ impl Routes {
                 if !request.method().is_get() {
                     return self.four_oh_five(request, Method::GET);
                 }
+                // NOTE: Path traversal is handled already by the URL decode function in the
+                // Request struct, but we'll leave the code for handling it here just in case
+
                 // Builds a new file path and constrains it to the static_dir relative to the root of
                 // the application
                 let mut path = PathBuf::from("./").canonicalize().unwrap();
@@ -217,6 +220,7 @@ impl Routes {
                 path = path.canonicalize().unwrap();
                 let path_bounds = path.clone().into_os_string();
                 path.push(target);
+                // tracing::debug!("Path before canonicalizaztion: {}", path.to_str().unwrap());
                 let Ok(path) = path.canonicalize() else {
                     // If we fail to canonicalize the path it's either not valid for this server to
                     // return, not sure if this will ever actually happen, or we dont have it
