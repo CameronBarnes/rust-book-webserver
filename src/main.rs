@@ -13,7 +13,7 @@ use codes::ResponseCode;
 use request::{Method, Request};
 use route::Routes;
 use threadpool::ThreadPool;
-use tracing::{debug, info};
+use tracing::{debug, error, info, warn};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod codes;
@@ -56,7 +56,7 @@ fn main() -> Result<()> {
         let duration = request.body().map_or("5", |v| v).parse().unwrap_or(5);
         info!("Sleeping for {duration} seconds");
         thread::sleep(Duration::from_secs(duration));
-        Ok(("Sleeping".into(), ResponseCode::Ok).into())
+        Ok(("Sleeping", ResponseCode::Ok).into())
     })?;
     routes.set_static_dir("static/");
     routes.add_plain("/plain", "Test Plain", None)?;
@@ -83,15 +83,35 @@ fn main() -> Result<()> {
 
 fn handle_connection<R: Deref<Target = Routes>>(mut stream: TcpStream, routes: R) {
     let buf_reader = BufReader::new(&mut stream);
-    let route_response = Request::parse(buf_reader).map_or_else(
-        |_| ("Failed to parse".into(), ResponseCode::Bad_Request).into(),
+    let (request, route_response) = Request::parse(buf_reader).map_or_else(
+        |err| {
+            error!("Failed to parse Request with error: {err}");
+            (None, ("Failed to parse", ResponseCode::Bad_Request).into())
+        },
         |request| {
             debug!("Received Request:\n{}", &request.as_string());
-            routes.apply(&request).unwrap()
+            (Some(request.clone()), routes.apply(&request).unwrap())
         },
     );
 
-    // TODO: Handle requests for logging from the ```RouteResponse```
+    if route_response.should_log() {
+        let source_addr = stream.peer_addr().unwrap();
+        if let Some(context) = route_response.context() {
+            warn!(
+                r#"Route Requested logging with context: {context}
+                Source Address: {source_addr}
+                Request Body: {}"#,
+                request.map_or("None".into(), |request| request.as_string())
+            );
+        } else {
+            warn!(
+                r#"Route Requested logging
+                Source Address: {source_addr}
+                Request Body: {}"#,
+                request.map_or("None".into(), |request| request.as_string())
+            );
+        }
+    }
 
     let response = format!(
         "{}\r\nContent-Length: {}\r\n\r\n{}",

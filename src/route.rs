@@ -1,4 +1,4 @@
-use std::{ffi::OsString, fs, path::PathBuf, sync::LazyLock};
+use std::{fs, path::PathBuf};
 
 use ahash::HashMap;
 use anyhow::{anyhow, Result};
@@ -48,40 +48,52 @@ impl RouteResponse {
         &self.content
     }
 
-    // TODO: Fill out the rest of the functions for logging
-}
+    pub const fn should_log(&self) -> bool {
+        self.require_logging
+    }
 
-impl From<(String, ResponseCode)> for RouteResponse {
-    fn from(val: (String, ResponseCode)) -> Self {
-        Self::new_ok(val.0, val.1)
+    pub const fn context(&self) -> Option<&String> {
+        self.logging_context.as_ref()
     }
 }
 
-impl From<(String, ResponseCode, bool)> for RouteResponse {
-    fn from(val: (String, ResponseCode, bool)) -> Self {
+impl<S: ToString> From<(S, ResponseCode)> for RouteResponse {
+    fn from(val: (S, ResponseCode)) -> Self {
+        Self::new_ok(val.0.to_string(), val.1)
+    }
+}
+
+impl<S: ToString> From<(S, ResponseCode, bool)> for RouteResponse {
+    fn from(val: (S, ResponseCode, bool)) -> Self {
         if val.2 {
-            Self::new_logging(val.0, val.1, None)
+            Self::new_logging(val.0.to_string(), val.1, None)
         } else {
             (val.0, val.1).into()
         }
     }
 }
 
-impl From<(String, ResponseCode, Option<String>)> for RouteResponse {
-    fn from(val: (String, ResponseCode, Option<String>)) -> Self {
-        Self::new_logging(val.0, val.1, val.2)
+impl<S: ToString> From<(S, ResponseCode, Option<String>)> for RouteResponse {
+    fn from(val: (S, ResponseCode, Option<String>)) -> Self {
+        Self::new_logging(val.0.to_string(), val.1, val.2)
     }
 }
 
-impl From<(String, ResponseCode, String)> for RouteResponse {
-    fn from(val: (String, ResponseCode, String)) -> Self {
+impl<S: ToString> From<(S, ResponseCode, String)> for RouteResponse {
+    fn from(val: (S, ResponseCode, String)) -> Self {
         (val.0, val.1, Some(val.2)).into()
     }
 }
 
-impl From<(String, ResponseCode, &str)> for RouteResponse {
-    fn from(val: (String, ResponseCode, &str)) -> Self {
-        (val.0, val.1, Some(val.2.into())).into()
+impl<S: ToString> From<(S, ResponseCode, &String)> for RouteResponse {
+    fn from(val: (S, ResponseCode, &String)) -> Self {
+        (val.0, val.1, Some(val.2.to_owned())).into()
+    }
+}
+
+impl<S: ToString> From<(S, ResponseCode, &str)> for RouteResponse {
+    fn from(val: (S, ResponseCode, &str)) -> Self {
+        (val.0, val.1, Some(val.2.to_owned())).into()
     }
 }
 
@@ -186,37 +198,48 @@ impl Routes {
     }
 
     pub fn apply(&self, request: &Request) -> Result<RouteResponse> {
+        // TODO: Rewrite this to use a fail fast methodology
         // TODO: Handle wildcard targets
-        static PATH_BOUNDS: LazyLock<OsString> =
-            LazyLock::new(|| PathBuf::from("./").canonicalize().unwrap().into_os_string());
         // TODO: This clone is not ideal
         if let Some(route) = self.map.get(&(request.method(), request.target().clone())) {
             route.apply(request)
         } else if let Some(dir) = self.static_dir.as_ref() {
-            // We only accept GET requests to this route, so we'll return a 405 otherwise
-            if !request.method().is_get() {
-                return self.four_oh_five(request, Method::GET);
-            }
-            // Build a new path with the presumably relative path provided by the user and the
-            // PATH_BOUNDS of this application. // TODO: Consider if we want to allow this outside
-            // TODO: of the static_dir, probably not
-            let mut path = dir.clone();
-            path.push(request.target_as_path());
-            let Ok(path) = path.canonicalize() else {
-                // If we fail to canonicalize the path it's either not valid for this server to
-                // return, not sure if this will ever actually happen, or we dont have it
-                // We'll return a 404 either way
-                if path.exists() {
-                    error!("Failed to canonicalize path: {:#?}", path.into_os_string());
+            // First we need to confirm this is actually the Route the user wants
+            if let Some(target) = request.target_as_path().strip_prefix(dir.to_str().unwrap()) {
+                // We only accept GET requests to this route, so we'll return a 405 otherwise
+                if !request.method().is_get() {
+                    return self.four_oh_five(request, Method::GET);
                 }
-                return self.four_oh_four(request);
-            };
-            if !path.starts_with(&*PATH_BOUNDS) {
-                //TODO: Return a 401 Unauthorized here. We still want to make sure this gets logged
-                //for security purposes, likely more effectively than we've done here.
-                Ok(("Unauthorized".into(), ResponseCode::Unauthorized, "Invalid path traversal").into())
-            } else if path.exists() {
-                Ok((fs::read_to_string(path)?, ResponseCode::Ok).into())
+                // Builds a new file path and constrains it to the static_dir relative to the root of
+                // the application
+                let mut path = PathBuf::from("./").canonicalize().unwrap();
+                path.push(dir);
+                path = path.canonicalize().unwrap();
+                let path_bounds = path.clone().into_os_string();
+                path.push(target);
+                let Ok(path) = path.canonicalize() else {
+                    // If we fail to canonicalize the path it's either not valid for this server to
+                    // return, not sure if this will ever actually happen, or we dont have it
+                    // We'll return a 404 either way
+                    if path.exists() {
+                        error!("Failed to canonicalize path: {:#?}", path.into_os_string());
+                    }
+                    return self.four_oh_four(request);
+                };
+                if !path.starts_with(&path_bounds) {
+                    Ok((
+                        "Unauthorized",
+                        ResponseCode::Unauthorized,
+                        "Invalid path traversal",
+                    )
+                        .into())
+                } else if path.exists() && !path.is_dir() {
+                    // TODO: handle what to do if it's a
+                    // directory
+                    Ok((fs::read_to_string(path)?, ResponseCode::Ok).into())
+                } else {
+                    self.four_oh_four(request)
+                }
             } else {
                 self.four_oh_four(request)
             }
@@ -227,7 +250,7 @@ impl Routes {
 
     pub fn four_oh_four(&self, request: &Request) -> Result<RouteResponse> {
         self.four_oh_four.as_ref().map_or(
-            Ok(("404 Not Found".to_string(), ResponseCode::Not_Found).into()),
+            Ok(("404 Not Found", ResponseCode::Not_Found).into()),
             |route| route.apply(request),
         )
     }
@@ -240,9 +263,9 @@ impl Routes {
                     request.method()
                 );
                 Ok((
-                    error.clone(),
+                    &error,
                     ResponseCode::Method_Not_Allowed,
-                    error, // We want to provide context here that requires this be logged
+                    &error, // We want to provide context here that requires this be logged
                 )
                     .into())
             },
