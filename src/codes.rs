@@ -1,6 +1,7 @@
 use derive_more::derive::Display;
 
-#[allow(non_camel_case_types)]
+// We allow dead code here because these still need to be here even if they're not currently used
+#[allow(non_camel_case_types, dead_code)]
 #[derive(Display, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResponseCode {
     //100,
@@ -30,16 +31,16 @@ pub enum ResponseCode {
 
     Bad_Request = 400,
     Unauthorized = 401,
-    //402,
-    //403,
+    Payment_Required = 402,
+    Forbidden = 403,
     Not_Found = 404,
     Method_Not_Allowed = 405,
-    //406,
-    //407,
-    //408,
-    //409,
-    //410,
-    //411,
+    Not_Acceptable = 406,
+    Proxy_Authentication_Required = 407,
+    Request_Timeout = 408,
+    Conflict = 409,
+    Gone = 410,
+    Length_Required = 411,
     //412,
     //413,
     //414,
@@ -58,17 +59,17 @@ pub enum ResponseCode {
     //431,
     //451,
 
-    //500,
-    //501,
-    //502,
-    //503,
-    //504,
-    //505,
-    //506,
-    //507,
-    //508,
-    //510,
-    //511,
+    Internal_Server_Error = 500,
+    Not_Implemented = 501,
+    Bad_Gateway = 502,
+    Service_Unavailable = 503,
+    Gateway_Timeout = 504,
+    HTTP_Version_Not_Supported = 505,
+    Variant_Also_Negotiates = 506,
+    Insufficient_Storage = 507,
+    Loop_Detected = 508,
+    Not_Extended = 510,
+    Network_Authentication_Required = 511,
 }
 
 impl ResponseCode {

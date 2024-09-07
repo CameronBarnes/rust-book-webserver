@@ -7,7 +7,6 @@ use ahash::{HashMap, HashMapExt};
 use anyhow::{anyhow, Context, Result};
 use derive_more::derive::{Display, FromStr, IsVariant};
 use itertools::Itertools;
-use tracing::debug;
 use urlencoding::decode;
 
 #[allow(clippy::upper_case_acronyms)]
@@ -60,7 +59,6 @@ impl Request {
         } else {
             return Err(anyhow!("Target value must start with '/'"));
         };
-        debug!("Target: {target}");
         let version = if version.starts_with("HTTP/") {
             version.to_string()
         } else {
@@ -75,7 +73,6 @@ impl Request {
             .take_while(|line| line.as_ref().is_ok_and(|line| !line.is_empty()))
         {
             let line = line?;
-            dbg!(&line);
             if line.trim().is_empty() {
                 in_headers = false;
                 continue;

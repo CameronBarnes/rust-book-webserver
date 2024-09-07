@@ -1,4 +1,7 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use ahash::HashMap;
 use anyhow::{anyhow, Result};
@@ -127,8 +130,10 @@ pub struct Routes {
     four_oh_four: Option<Route>,
     four_oh_five: Option<Route>,
     static_dir: Option<PathBuf>,
+    auto_index: bool,
 }
 
+#[allow(dead_code)]
 impl Routes {
     pub fn add_static<A: Into<String>, B: Into<String>>(
         &mut self,
@@ -193,8 +198,16 @@ impl Routes {
         self.four_oh_four = Some(route);
     }
 
+    pub fn set_405(&mut self, route: Route) {
+        self.four_oh_five = Some(route);
+    }
+
     pub fn set_static_dir<A: Into<PathBuf>>(&mut self, path: A) {
         self.static_dir = Some(path.into());
+    }
+
+    pub fn set_auto_index(&mut self, enabled: bool) {
+        self.auto_index = enabled;
     }
 
     pub fn apply(&self, request: &Request) -> Result<RouteResponse> {
@@ -231,16 +244,20 @@ impl Routes {
                     return self.four_oh_four(request);
                 };
                 if !path.starts_with(&path_bounds) {
+                    // Previously this was returning unauthorized, but that implies that with
+                    // authentication it may be allowed, and we will never allow this
                     Ok((
-                        "Unauthorized",
-                        ResponseCode::Unauthorized,
+                        "Forbidden",
+                        ResponseCode::Forbidden,
                         "Invalid path traversal",
                     )
                         .into())
-                } else if path.exists() && !path.is_dir() {
-                    // TODO: handle what to do if it's a
-                    // directory
-                    Ok((fs::read_to_string(path)?, ResponseCode::Ok).into())
+                } else if path.exists() {
+                    if path.is_dir() {
+                        self.auto_index(request, &path)
+                    } else {
+                        Ok((fs::read_to_string(path)?, ResponseCode::Ok).into())
+                    }
                 } else {
                     self.four_oh_four(request)
                 }
@@ -249,6 +266,24 @@ impl Routes {
             }
         } else {
             self.four_oh_four(request)
+        }
+    }
+
+    fn auto_index(&self, request: &Request, path: &Path) -> Result<RouteResponse> {
+        if !self.auto_index || !path.exists() {
+            self.four_oh_four(request)
+        } else if !path.is_dir() {
+            error!(
+                "'auto_index' was called with a path: {} , that's not a dir. This shouldnt happen",
+                path.to_str().unwrap()
+            );
+            Ok(("Internal Server Error", ResponseCode::Internal_Server_Error).into())
+        } else {
+            Ok((
+                "Sorry! Directory Auto-Index is not yet available.",
+                ResponseCode::Not_Implemented,
+            )
+                .into())
         }
     }
 

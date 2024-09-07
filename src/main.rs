@@ -11,7 +11,7 @@ use anyhow::Result;
 use clap::Parser;
 use codes::ResponseCode;
 use request::{Method, Request};
-use route::Routes;
+use route::{Route, Routes};
 use threadpool::ThreadPool;
 use tracing::{error, info, warn};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
@@ -32,6 +32,8 @@ struct Args {
     port: String,
     #[arg(short, long, default_value_t = 0)]
     threads: u8,
+    #[arg(short = 'i', long, default_value_t = false)]
+    auto_index: bool,
 }
 
 fn main() -> Result<()> {
@@ -47,8 +49,10 @@ fn main() -> Result<()> {
     info!("Socket bound to address: {}", &address);
 
     let mut routes = Routes::default();
+    routes.set_auto_index(args.auto_index);
+
     routes.add_static("/", "static/hello.html", None)?;
-    routes.set_404(route::Route::Static(
+    routes.set_404(Route::Static(
         "static/404.html".into(),
         Some(ResponseCode::Not_Found),
     ));
